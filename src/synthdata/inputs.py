@@ -9,6 +9,8 @@ SIZE = 512
 # Width in pixels of the photo border that outpainting may blend with new content.
 OVERLAP = 8
 TRIMAP_PET = 1
+# A trimap marking less of the photo as pet than this is treated as broken.
+MIN_PET_SHARE = 0.02
 
 
 def square(image: Image.Image, resample=Image.Resampling.LANCZOS) -> Image.Image:
@@ -22,6 +24,12 @@ def square(image: Image.Image, resample=Image.Resampling.LANCZOS) -> Image.Image
 
 def source_photo(image: str) -> Image.Image:
     return square(open_rgb(image_path(image)))
+
+
+def pet_share(image: str) -> float:
+    """Share of the photo that its Oxford-IIIT Pet annotation marks as the pet."""
+    with Image.open(trimap_path(image)) as trimap:
+        return float((np.asarray(trimap.convert("L")) == TRIMAP_PET).mean())
 
 
 def background_mask(image: str) -> Image.Image:

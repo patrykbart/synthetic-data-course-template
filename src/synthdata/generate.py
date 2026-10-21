@@ -22,11 +22,13 @@ from pathlib import Path
 from synthdata.config import POOLS_DIR
 from synthdata.data import minority_training_photos
 from synthdata.inputs import (
+    MIN_PET_SHARE,
     SIZE,
     background_mask,
     keep_cat,
     outpaint_inputs,
     paste_back,
+    pet_share,
     source_photo,
 )
 from synthdata.pools import read_manifest
@@ -164,10 +166,22 @@ def check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         parser.error("steps × strength must be at least 1; raise --steps")
 
 
+def generation_sources(mode: str) -> tuple[list[str], list[str]]:
+    """Training photos to start from, and those skipped for a broken mask."""
+    if mode not in SOURCE_MODES:
+        return [], []
+    photos = minority_training_photos()
+    if mode != "inpaint":
+        return photos, []
+    usable = [photo for photo in photos if pet_share(photo) >= MIN_PET_SHARE]
+    return usable, [photo for photo in photos if photo not in usable]
+
+
 def pool_settings(args: argparse.Namespace) -> dict:
     defaults = MODELS[args.model]
     spec = INPAINTING if args.mode in EDIT_MODES else defaults
     prompts = args.prompt or (SCENE_PROMPTS if args.mode in EDIT_MODES else PROMPTS)
+    sources, skipped = generation_sources(args.mode)
     return {
         "mode": args.mode,
         "model": args.model,
@@ -185,7 +199,8 @@ def pool_settings(args: argparse.Namespace) -> dict:
         "outpaint_scale": args.outpaint_scale,
         "seed": args.seed,
         "size": SIZE,
-        "sources": minority_training_photos() if args.mode in SOURCE_MODES else [],
+        "sources": sources,
+        "skipped_sources": skipped,
     }
 
 
@@ -369,6 +384,11 @@ def generate_one(pipe, index: int, settings: dict, context: dict) -> dict:
 def main(argv=None) -> None:
     args = parse_args(argv)
     settings = pool_settings(args)
+    for photo in settings["skipped_sources"]:
+        print(
+            f"Skipping {photo}: its annotation marks no cat, so inpainting "
+            "would repaint the whole photo."
+        )
     pool_dir = POOLS_DIR / args.name
     check_pool(pool_dir, settings)
     (pool_dir / "images").mkdir(exist_ok=True)

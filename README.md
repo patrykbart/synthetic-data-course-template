@@ -13,10 +13,11 @@ images, and explain what changes the classifier and why.
 
 ## Setup
 
-Create your own repository with **Use this template**, clone it, and run:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), create
+your own repository with **Use this template**, clone it, and run:
 
 ```bash
-uv sync
+uv sync --locked
 uv run synth-data
 uv run pytest
 ```
@@ -27,20 +28,35 @@ finish Meeting 1; the other tests should pass.
 
 ### Hardware
 
-HARDWARE_TABLE
+Measured on an RTX 5070 Ti laptop GPU (12 GB); slower GPUs take
+proportionally longer.
 
-Diffusion models download into `~/.cache/huggingface` the first time you use
-them. Add `--low-vram` to `synth-generate` on GPUs with less than 8 GB.
+| Task                                     |  Time | GPU memory | First download |
+| ---------------------------------------- | ----: | ---------: | -------------: |
+| Train one run (5 seeds)                  | 1 min |          – |          21 MB |
+| Text-to-image, SD 1.5, 110 images        | 3 min |     3.2 GB |         2.7 GB |
+| Text-to-image, SDXL-Turbo, 110 images    | 1 min |     7.7 GB |         6.9 GB |
+| img2img (strength 0.5), 110 images       | 2 min |     3.2 GB |   (uses SD 1.5) |
+| IP-Adapter, 110 images                   | 3 min |     4.4 GB |       + 2.6 GB |
+| Inpainting or outpainting, 110 images    | 3 min |     3.2 GB |         2.7 GB |
+
+Models download into `~/.cache/huggingface` the first time you use them. Add
+`--low-vram` to `synth-generate` on GPUs with less than 6 GB. Training also runs
+on a CPU, only slower; generating images on a CPU is impractically slow.
 
 Without a suitable GPU, use the faculty computers or a free cloud GPU such as
-Google Colab or Kaggle. In a notebook there, run:
+Google Colab or Kaggle. In a notebook cell there, run:
 
-```bash
-git clone <your-repository-url> project
-cd project
-pip install -e .
-synth-data
+```text
+!git clone <your-repository-url> project
+%cd project
+!pip install -e .
+!synth-data
 ```
+
+and prefix every later command with `!`, for example
+`!synth-train --name m1-real --method real`. Commit and push your results from
+the notebook, or download them, before the session ends: its disk is erased.
 
 ## The Fixed Experiment
 
@@ -127,7 +143,9 @@ uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.
 
 - `inpaint` keeps the real cat and paints a new background. The mask comes from
   the Oxford-IIIT Pet annotations; the contact sheet shows it in red. Use
-  `--prompt` to choose the scene; by default six scenes are used in turn.
+  `--prompt` to choose the scene; by default six scenes are used in turn. The
+  annotation of `Egyptian_Mau_165` marks no cat, so inpainting skips that photo
+  and starts from the other 14.
 - `outpaint` shrinks the photo into the centre and paints the surroundings, as
   if the camera moved back. `--outpaint-scale` sets how far: 1.25 to 2.
 
@@ -139,7 +157,8 @@ choice in `EXPERIMENTS.md`, and only then run:
 ```bash
 uv run synth-final --condition real --condition oversample --condition augment \
     --condition "text-to-image=m2-base" --condition "img2img=m3-strength-0.5" \
-    --condition "ip-adapter=m3-ip-0.5" --condition "background=m4-backgrounds"
+    --condition "ip-adapter=m3-ip-0.5" --condition "background=m4-backgrounds" \
+    --condition "outpaint=m4-outpaint-1.5"
 ```
 
 It trains every condition with the same seeds, evaluates them once on the test

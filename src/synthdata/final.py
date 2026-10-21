@@ -87,21 +87,35 @@ def plot_differences(rows: list[dict], path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    conditions = list(dict.fromkeys(row["condition"] for row in rows))
+    references = list(dict.fromkeys(row["reference"] for row in rows))
+    colours = ["#b45309", "#15803d", "#1f4e79", "#7c3aed"]
     figure, axes = plt.subplots(
-        1, 2, figsize=(9, 0.55 * len(rows) + 1.6), constrained_layout=True
+        1, 2, figsize=(10, 0.5 * len(conditions) + 1.9), layout="constrained"
     )
-    names = [f"{row['condition']} vs {row['reference']}" for row in rows]
     for axis, (key, title) in zip(axes, METRICS.items(), strict=True):
-        for position, row in enumerate(rows):
-            mean, low, high = row[key]
-            axis.plot([low, high], [position, position], color="#1f4e79", lw=2)
-            axis.plot(mean, position, "D", color="#1f4e79")
+        for number, reference in enumerate(references):
+            shift = (number - (len(references) - 1) / 2) * 0.22
+            colour = colours[number % len(colours)]
+            for row in rows:
+                if row["reference"] != reference:
+                    continue
+                position = conditions.index(row["condition"]) + shift
+                mean, low, high = row[key]
+                axis.plot([low, high], [position, position], color=colour, lw=2)
+                axis.plot(mean, position, "D", color=colour, ms=5)
+            axis.plot([], [], "-D", color=colour, label=f"compared with {reference}")
         axis.axvline(0, color="#888888", lw=1, ls="--")
-        axis.set_yticks(range(len(rows)))
-        axis.set_yticklabels(names if key == "egyptian_mau_recall" else [])
-        axis.invert_yaxis()
-        axis.set_title(f"Difference in {title} (95% interval)")
+        axis.set_yticks(range(len(conditions)))
+        axis.set_yticklabels(conditions if key == "egyptian_mau_recall" else [])
+        axis.set_ylim(len(conditions) - 0.5, -0.5)
+        axis.set_title(f"Difference in {title}")
         axis.spines[["top", "right"]].set_visible(False)
+    handles, labels = axes[0].get_legend_handles_labels()
+    figure.legend(
+        handles, labels, loc="outside lower center", ncol=len(labels), frameon=False
+    )
+    figure.suptitle("Differences on the test photos with 95% intervals")
     figure.savefig(path, dpi=150)
     plt.close(figure)
 
@@ -245,9 +259,11 @@ def main(argv=None) -> None:
     arrays = {label: np.asarray(rows) for label, rows in predictions.items()}
     differences = []
     for label in labels:
-        for reference in references:
-            if label == reference:
-                continue
+        # A reference is compared only with the references listed before it.
+        compared = (
+            references[: references.index(label)] if label in references else references
+        )
+        for reference in compared:
             row = {"condition": label, "reference": reference}
             for key, score in SCORES.items():
                 row[key] = bootstrap(truth, arrays[label], arrays[reference], score)
