@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.cache/
+.ipynb_checkpoints/
+
+# Oxford-IIIT Pet is downloaded by `uv run synth-data`; only the split is tracked.
+data/*
+!data/split.csv
+
+# Generated images stay local; manifests, settings, and contact sheets are tracked.
+pools/*/images/
+*.tmp.png
