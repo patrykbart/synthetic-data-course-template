@@ -31,14 +31,14 @@ finish Meeting 1; the other tests should pass.
 Measured on an RTX 5070 Ti laptop GPU (12 GB); slower GPUs take
 proportionally longer.
 
-| Task                                     |  Time | GPU memory | First download |
-| ---------------------------------------- | ----: | ---------: | -------------: |
-| Train one run (5 seeds)                  | 1 min |          – |          21 MB |
-| Text-to-image, SD 1.5, 110 images        | 3 min |     3.2 GB |         2.7 GB |
-| Text-to-image, SDXL-Turbo, 110 images    | 1 min |     7.7 GB |         6.9 GB |
-| img2img (strength 0.5), 110 images       | 2 min |     3.2 GB |   (uses SD 1.5) |
-| IP-Adapter, 110 images                   | 3 min |     4.4 GB |       + 2.6 GB |
-| Inpainting or outpainting, 110 images    | 3 min |     3.2 GB |         2.7 GB |
+| Task                                  |  Time | GPU memory | First download |
+| ------------------------------------- | ----: | ---------: | -------------: |
+| Train one run (5 seeds)               | 1 min |          – |          21 MB |
+| Text-to-image, SD 1.5, 110 images     | 3 min |     3.2 GB |     about 3 GB |
+| Text-to-image, SDXL-Turbo, 110 images | 1 min |     7.7 GB |     about 7 GB |
+| img2img (strength 0.5), 110 images    | 2 min |     3.2 GB |  (uses SD 1.5) |
+| IP-Adapter, 110 images                | 3 min |     4.4 GB |   + about 3 GB |
+| Inpainting or outpainting, 110 images | 3 min |     3.2 GB |     about 3 GB |
 
 Models download into `~/.cache/huggingface` the first time you use them. Add
 `--low-vram` to `synth-generate` on GPUs with less than 6 GB. Training also runs

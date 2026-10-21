@@ -238,6 +238,11 @@ def pick_device(name: str):
 
 
 def load_pipeline(settings: dict, device, dtype, low_vram: bool):
+    # Silence library notices before diffusers imports transformers models.
+    from transformers.utils import logging as transformers_logging
+
+    transformers_logging.set_verbosity_error()
+
     from diffusers import (
         AutoPipelineForImage2Image,
         AutoPipelineForInpainting,
@@ -261,7 +266,7 @@ def load_pipeline(settings: dict, device, dtype, low_vram: bool):
         settings["repo"],
         revision=settings["revision"],
         variant=settings["variant"],
-        torch_dtype=dtype,
+        dtype=dtype,
     )
     schedulers = {
         "ddim": DDIMScheduler,
