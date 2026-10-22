@@ -167,7 +167,10 @@ uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 
 
 ## Meeting 3 — Generation from Training Photos
 
-Both modes start from the 15 Egyptian Mau training photos, used in turn.
+You do not pass a photo: both modes start from the 15 Egyptian Mau training
+photos, used in turn, and the command prints which ones. Add
+`--source Egyptian_Mau_117` (repeat it for more) to start only from the
+training photos you choose; any other photo is refused.
 
 ```bash
 uv run synth-generate --name m3-strength-0.5 --mode img2img --strength 0.5
@@ -196,6 +199,9 @@ uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.
   and starts from the other 14.
 - `outpaint` shrinks the photo into the centre and paints the surroundings, as
   if the camera moved back. `--outpaint-scale` sets how far: 1.25 to 2.
+
+As in Meeting 3, both modes start from the training photos themselves and print
+which ones; `--source` chooses some of them.
 
 ## After Meeting 4 — Final Comparison
 

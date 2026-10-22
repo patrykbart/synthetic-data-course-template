@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from synthdata.generate import parse_args, pool_settings
 from synthdata.inputs import keep_cat, outpaint_inputs, paste_back
 from synthdata.metrics import macro_f1, summary, target_recall
 from synthdata.pools import draw, read_manifest
@@ -104,3 +105,39 @@ def test_results_keep_every_seed_and_earlier_tags(tmp_path):
     assert results["tags"] == {"mode": "ip-adapter", "scale": 0.5}
     assert [entry["seed"] for entry in results["seeds"]] == [0, 1]
     assert "confusion" not in results["seeds"][0]
+
+
+def test_source_limits_generation_to_chosen_training_photos():
+    args = parse_args(
+        [
+            "--name",
+            "x",
+            "--mode",
+            "img2img",
+            "--strength",
+            "0.5",
+            "--source",
+            "Egyptian_Mau_117",
+            "--source",
+            "Egyptian_Mau_104",
+        ]
+    )
+    assert pool_settings(args)["sources"] == ["Egyptian_Mau_104", "Egyptian_Mau_117"]
+
+
+def test_source_refuses_photos_outside_the_minority_training_set():
+    with pytest.raises(SystemExit):
+        parse_args(
+            [
+                "--name",
+                "x",
+                "--mode",
+                "img2img",
+                "--strength",
+                "0.5",
+                "--source",
+                "Abyssinian_1",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        parse_args(["--name", "x", "--source", "Egyptian_Mau_117"])

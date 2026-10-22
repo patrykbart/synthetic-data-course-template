@@ -125,6 +125,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--outpaint-scale", type=float, help="outpaint: how far to zoom out (1.25-2)"
     )
+    parser.add_argument(
+        "--source",
+        action="append",
+        metavar="PHOTO",
+        help="img2img, ip-adapter, inpaint, outpaint: start only from this Egyptian "
+        "Mau training photo, e.g. Egyptian_Mau_117 (repeat the option for more; "
+        "default: all 15)",
+    )
     parser.add_argument("--low-vram", action="store_true", help="for GPUs under 8 GB")
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu")
     parser.add_argument(
@@ -137,6 +145,15 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     mode = args.mode
+    if args.source and mode not in SOURCE_MODES:
+        parser.error("--source is used only with modes that start from a photo")
+    training = minority_training_photos()
+    for photo in args.source or []:
+        if photo not in training:
+            parser.error(
+                f"--source {photo}: only the Egyptian Mau training photos are "
+                f"allowed: {', '.join(training)}"
+            )
     if mode in ("ip-adapter", *EDIT_MODES) and args.model != "sd15":
         parser.error(f"--mode {mode} works with --model sd15 only")
     if args.strength is not None and mode not in ("img2img", "inpaint"):
@@ -166,11 +183,13 @@ def check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         parser.error("steps × strength must be at least 1; raise --steps")
 
 
-def generation_sources(mode: str) -> tuple[list[str], list[str]]:
+def generation_sources(mode: str, chosen=None) -> tuple[list[str], list[str]]:
     """Training photos to start from, and those skipped for a broken mask."""
     if mode not in SOURCE_MODES:
         return [], []
-    photos = minority_training_photos()
+    photos = [
+        photo for photo in minority_training_photos() if not chosen or photo in chosen
+    ]
     if mode != "inpaint":
         return photos, []
     usable = [photo for photo in photos if pet_share(photo) >= MIN_PET_SHARE]
@@ -181,7 +200,7 @@ def pool_settings(args: argparse.Namespace) -> dict:
     defaults = MODELS[args.model]
     spec = INPAINTING if args.mode in EDIT_MODES else defaults
     prompts = args.prompt or (SCENE_PROMPTS if args.mode in EDIT_MODES else PROMPTS)
-    sources, skipped = generation_sources(args.mode)
+    sources, skipped = generation_sources(args.mode, args.source)
     return {
         "mode": args.mode,
         "model": args.model,
@@ -393,6 +412,15 @@ def main(argv=None) -> None:
         print(
             f"Skipping {photo}: its annotation marks no cat, so inpainting "
             "would repaint the whole photo."
+        )
+    if args.mode in SOURCE_MODES:
+        if not settings["sources"]:
+            raise SystemExit("none of the chosen photos can be used for inpainting")
+        count = len(settings["sources"])
+        print(
+            f"Starting from {count} Egyptian Mau training photo"
+            f"{'s' if count > 1 else ''}, used in turn: "
+            + ", ".join(settings["sources"])
         )
     pool_dir = POOLS_DIR / args.name
     check_pool(pool_dir, settings)
