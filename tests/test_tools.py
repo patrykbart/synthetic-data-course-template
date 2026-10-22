@@ -4,13 +4,20 @@ from collections import Counter
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from synthdata.generate import parse_args, pool_settings
 from synthdata.inputs import keep_cat, outpaint_inputs, paste_back
 from synthdata.metrics import macro_f1, summary, target_recall
 from synthdata.pools import draw, read_manifest
-from synthdata.train import parse_tags, write_results
+from synthdata.train import (
+    build_model,
+    load_checkpoint,
+    parse_tags,
+    save_checkpoint,
+    write_results,
+)
 
 RED = (200, 10, 10)
 BLUE = (0, 0, 255)
@@ -107,11 +114,30 @@ def test_results_keep_every_seed_and_earlier_tags(tmp_path):
     assert "confusion" not in results["seeds"][0]
 
 
+def test_checkpoint_restores_the_trained_model(tmp_path):
+    model = build_model("efficientnet_b0", pretrained=False)
+    save_checkpoint(tmp_path / "model.pt", "efficientnet_b0", model)
+    restored = load_checkpoint(tmp_path / "model.pt", torch.device("cpu"))
+    for name, tensor in model.state_dict().items():
+        assert torch.equal(tensor, restored.state_dict()[name])
+
+
+def test_prompt_is_required():
+    with pytest.raises(SystemExit):
+        parse_args(["--name", "x"])
+    with pytest.raises(SystemExit):
+        parse_args(["--name", "x", "--prompt", " "])
+    settings = pool_settings(parse_args(["--name", "x", "--prompt", "a cat"]))
+    assert settings["prompts"] == ["a cat"]
+
+
 def test_source_limits_generation_to_chosen_training_photos():
     args = parse_args(
         [
             "--name",
             "x",
+            "--prompt",
+            "a cat",
             "--mode",
             "img2img",
             "--strength",
@@ -131,6 +157,8 @@ def test_source_refuses_photos_outside_the_minority_training_set():
             [
                 "--name",
                 "x",
+                "--prompt",
+                "a cat",
                 "--mode",
                 "img2img",
                 "--strength",
@@ -140,4 +168,4 @@ def test_source_refuses_photos_outside_the_minority_training_set():
             ]
         )
     with pytest.raises(SystemExit):
-        parse_args(["--name", "x", "--source", "Egyptian_Mau_117"])
+        parse_args(["--name", "x", "--prompt", "a cat", "--source", "Egyptian_Mau_117"])

@@ -56,6 +56,8 @@ Google Colab or Kaggle. In a notebook cell there, run:
 and prefix every later command with `!`, for example
 `!synth-train --name m1-real --method real`. Commit and push your results from
 the notebook, or download them, before the session ends: its disk is erased.
+Download also the `model.pt` files of the runs you will test; they are not
+committed.
 
 ## The Fixed Experiment
 
@@ -69,15 +71,16 @@ the notebook, or download them, before the session ends: its disk is erased.
 - **Metrics:** Egyptian Mau recall (the share of Egyptian Mau photos recognised)
   and macro-F1 over all eight breeds (to catch harm to the other breeds).
 - **Validation and test:** Meetings 1–4 evaluate on the validation photos. The
-  test photos are used once, by `synth-final`, after Meeting 4.
+  test photos are used once, after Meeting 4, by `synth-test` on the runs you
+  chose.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `uv run synth-train --name NAME --method METHOD` | trains 5 seeds, saves `runs/NAME/` |
-| `uv run synth-generate --name NAME [options]` | makes a pool of images in `pools/NAME/` |
-| `uv run synth-final --condition ...` | the single evaluation on the test photos |
+| `uv run synth-generate --name NAME --prompt PROMPT [options]` | makes a pool of images in `pools/NAME/` |
+| `uv run synth-test --run NAME` | evaluates the saved models of a run on the test photos |
 
 `--method` is `real` (no added examples), `oversample`, `augment`, or
 `synthetic` with `--pool NAME`. Each pool has a `manifest.jsonl` line for every
@@ -124,7 +127,9 @@ example):
 
 `recall` lists all eight breeds. Each `runs/NAME/seed-K/` folder also has
 `metrics.json` with the confusion matrix, `predictions.csv` with the prediction
-for every validation photo, and `run.json` with the exact training data.
+for every validation photo, `run.json` with the exact training data, and
+`model.pt`, the trained model (about 16 MB, not committed) that `synth-test`
+evaluates after Meeting 4.
 
 ## Meeting 1 — Real-Data Baselines
 
@@ -140,8 +145,11 @@ Then compare the three runs, seed by seed, in your own table and plot.
 
 ## Meeting 2 — Text-to-Image Generation
 
+`--prompt` has no default: write the description yourself, and repeat the option
+to cycle through several prompts.
+
 ```bash
-uv run synth-generate --name m2-base
+uv run synth-generate --name m2-base --prompt "<your prompt>"
 uv run synth-train --name m2-base --method synthetic --pool m2-base
 ```
 
@@ -149,7 +157,7 @@ Then make new pools that change one setting each, and tag each run with the
 setting you changed:
 
 ```bash
-uv run synth-generate --name m2-guidance-3 --guidance 3
+uv run synth-generate --name m2-guidance-3 --prompt "<your prompt>" --guidance 3
 uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 \
     --tag guidance=3
 ```
@@ -157,7 +165,7 @@ uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 
 | Option | Meaning | Default |
 | --- | --- | --- |
 | `--model` | `sd15` (Stable Diffusion 1.5) or `sdxl-turbo` | `sd15` |
-| `--prompt` | text prompt; repeat the option to cycle through several | four varied prompts |
+| `--prompt` | text prompt; repeat the option to cycle through several | none: required |
 | `--negative-prompt` | what the image should not contain | drawings, text, extra limbs… |
 | `--steps` | denoising steps of the sampler | 30 (SDXL-Turbo: 4) |
 | `--guidance` | how strongly the image follows the prompt | 7.5 (SDXL-Turbo: 0) |
@@ -170,11 +178,15 @@ uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 
 You do not pass a photo: both modes start from the 15 Egyptian Mau training
 photos, used in turn, and the command prints which ones. Add
 `--source Egyptian_Mau_117` (repeat it for more) to start only from the
-training photos you choose; any other photo is refused.
+training photos you choose; any other photo is refused. Both modes still need
+`--prompt`: keep it the same within a sweep, for example the prompt of the pool
+you took forward from Meeting 2.
 
 ```bash
-uv run synth-generate --name m3-strength-0.5 --mode img2img --strength 0.5
-uv run synth-generate --name m3-ip-0.5 --mode ip-adapter --ip-adapter-scale 0.5
+uv run synth-generate --name m3-strength-0.5 --mode img2img --strength 0.5 \
+    --prompt "<your prompt>"
+uv run synth-generate --name m3-ip-0.5 --mode ip-adapter --ip-adapter-scale 0.5 \
+    --prompt "<your prompt>"
 uv run synth-train --name m3-ip-0.5 --method synthetic --pool m3-ip-0.5 \
     --tag mode=ip-adapter --tag scale=0.5
 ```
@@ -188,15 +200,18 @@ uv run synth-train --name m3-ip-0.5 --method synthetic --pool m3-ip-0.5 \
 ## Meeting 4 — Editing Training Photos
 
 ```bash
-uv run synth-generate --name m4-backgrounds --mode inpaint
-uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.5
+uv run synth-generate --name m4-backgrounds --mode inpaint \
+    --prompt "<scene 1>" --prompt "<scene 2>" --prompt "<scene 3>"
+uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.5 \
+    --prompt "<your prompt>"
 ```
 
 - `inpaint` keeps the real cat and paints a new background. The mask comes from
-  the Oxford-IIIT Pet annotations; the contact sheet shows it in red. Use
-  `--prompt` to choose the scene; by default six scenes are used in turn. The
-  annotation of `Egyptian_Mau_165` marks no cat, so inpainting skips that photo
-  and starts from the other 14.
+  the Oxford-IIIT Pet annotations; the contact sheet shows it in red. Describe
+  the whole photo in `--prompt`, the cat and its new surroundings, and repeat
+  the option to use several scenes in turn. The annotation of
+  `Egyptian_Mau_165` marks no cat, so inpainting skips that photo and starts
+  from the other 14.
 - `outpaint` shrinks the photo into the centre and paints the surroundings, as
   if the camera moved back. `--outpaint-scale` sets how far: 1.25 to 2.
 
@@ -205,29 +220,28 @@ which ones; `--source` chooses some of them.
 
 ## After Meeting 4 — Final Comparison
 
-Choose the best pool of each method using the validation results, freeze the
-choice in `EXPERIMENTS.md`, and only then run:
+Choose the best run of each method using the validation results and freeze the
+choice in `EXPERIMENTS.md`. Only then evaluate the saved models of those runs on
+the test photos, one command per run:
 
 ```bash
-uv run synth-final --condition real --condition oversample --condition augment \
-    --condition "text-to-image=m2-base" --condition "img2img=m3-strength-0.5" \
-    --condition "ip-adapter=m3-ip-0.5" --condition "background=m4-backgrounds" \
-    --condition "outpaint=m4-outpaint-1.5"
+uv run synth-test --run m1-oversample
+uv run synth-test --run m2-base
 ```
 
-It trains every condition with the same seeds, evaluates them once on the test
-photos, and writes `final/results.json`: the test metrics of every seed, and the
-difference of every condition from oversampling and augmentation with a 95%
-interval that accounts for both the seeds and the choice of test photos. Make
-your final table and plot from it.
+`synth-test` evaluates the model of every seed on the 240 test photos and writes
+`runs/NAME/test-results.json` in the same format as `results.json`, plus
+`test-metrics.json` and `test-predictions.csv` in every seed folder. Add
+`--seeds 0` to test only the model of seed 0. The final table and plot, and the
+differences between methods, are yours to make.
 
 ## What to Commit
 
-Commit `EXPERIMENTS.md`, your tables and plots in `evidence/`, `runs/`,
-`final/`, and each pool's
-`manifest.jsonl`, `pool.json`, and `contact-sheet.jpg`. Generated images,
-downloaded data, and model weights stay local; `.gitignore` already excludes
-them, and the manifests record how to recreate every image.
+Commit `EXPERIMENTS.md`, your tables and plots in `evidence/`, `runs/`, and each
+pool's `manifest.jsonl`, `pool.json`, and `contact-sheet.jpg`. Generated images,
+downloaded data, and model weights, including the `model.pt` of every run, stay
+local; `.gitignore` already excludes them, and the manifests record how to
+recreate every image.
 
 ## Rules
 
@@ -235,7 +249,8 @@ them, and the manifests record how to recreate every image.
 - Do not delete pools or images you do not like: describe them.
 - Generation uses only the 15 Egyptian Mau training photos; the tools enforce
   this.
-- Use `synth-final` once. A second run stops unless the instructor agrees.
+- Test only the runs you froze, and only once: do not change your choices after
+  seeing the test results.
 
 ## Coding Agent
 

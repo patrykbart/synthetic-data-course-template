@@ -1,11 +1,18 @@
 """Generate Egyptian Mau images with a diffusion model and record every attempt.
 
-    uv run synth-generate --name m2-base
-    uv run synth-generate --name m2-guidance-3 --guidance 3
-    uv run synth-generate --name m3-strength-0.5 --mode img2img --strength 0.5
-    uv run synth-generate --name m3-ip-0.5 --mode ip-adapter --ip-adapter-scale 0.5
-    uv run synth-generate --name m4-backgrounds --mode inpaint
-    uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.5
+    uv run synth-generate --name m2-base --prompt "<your prompt>"
+    uv run synth-generate --name m2-guidance-3 --prompt "<your prompt>" --guidance 3
+    uv run synth-generate --name m3-strength-0.5 --prompt "<your prompt>" \
+        --mode img2img --strength 0.5
+    uv run synth-generate --name m3-ip-0.5 --prompt "<your prompt>" \
+        --mode ip-adapter --ip-adapter-scale 0.5
+    uv run synth-generate --name m4-backgrounds --mode inpaint \
+        --prompt "<scene 1>" --prompt "<scene 2>"
+    uv run synth-generate --name m4-outpaint-1.5 --prompt "<your prompt>" \
+        --mode outpaint --outpaint-scale 1.5
+
+There is no default prompt: write it yourself, and repeat --prompt to cycle
+through several.
 
 Images go to pools/<name>/images/, one manifest line per attempt to
 pools/<name>/manifest.jsonl, and the first 24 attempts to contact-sheet.jpg.
@@ -70,24 +77,6 @@ IP_ADAPTER = {
     "revision": "018e402774aeeddd60609b4ecdb7e298259dc729",
 }
 
-PROMPTS = [
-    "a candid photograph of an Egyptian Mau cat, silver spotted coat and green "
-    "eyes, natural indoor light, ordinary home background",
-    "a documentary photograph of an Egyptian Mau cat, slender body and naturally "
-    "spotted silver coat, outdoor daylight",
-    "an unedited pet photograph of an Egyptian Mau cat sitting in a home, "
-    "realistic fur, natural lighting",
-    "a realistic snapshot of a silver Egyptian Mau cat standing, entire cat "
-    "visible, everyday background",
-]
-SCENE_PROMPTS = [
-    "a photograph of an Egyptian Mau cat on a sofa in a living room",
-    "a photograph of an Egyptian Mau cat in a garden with green grass",
-    "a photograph of an Egyptian Mau cat on a wooden kitchen floor",
-    "a photograph of an Egyptian Mau cat on a bed with white sheets",
-    "a photograph of an Egyptian Mau cat outdoors on a stone path",
-    "a photograph of an Egyptian Mau cat on a windowsill in daylight",
-]
 NEGATIVE_PROMPT = (
     "illustration, painting, cartoon, text, watermark, multiple cats, "
     "deformed animal, extra limbs"
@@ -103,7 +92,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--model", choices=tuple(MODELS), default="sd15")
     parser.add_argument("--count", type=int, default=110, help="images in the pool")
     parser.add_argument(
-        "--prompt", action="append", help="repeat the option to cycle through prompts"
+        "--prompt",
+        action="append",
+        required=True,
+        help="text prompt (required); repeat the option to cycle through prompts",
     )
     parser.add_argument("--negative-prompt", default=NEGATIVE_PROMPT)
     parser.add_argument("--steps", type=int, help="denoising steps of the sampler")
@@ -145,6 +137,8 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     mode = args.mode
+    if any(not prompt.strip() for prompt in args.prompt):
+        parser.error("--prompt must not be empty")
     if args.source and mode not in SOURCE_MODES:
         parser.error("--source is used only with modes that start from a photo")
     training = minority_training_photos()
@@ -199,7 +193,6 @@ def generation_sources(mode: str, chosen=None) -> tuple[list[str], list[str]]:
 def pool_settings(args: argparse.Namespace) -> dict:
     defaults = MODELS[args.model]
     spec = INPAINTING if args.mode in EDIT_MODES else defaults
-    prompts = args.prompt or (SCENE_PROMPTS if args.mode in EDIT_MODES else PROMPTS)
     sources, skipped = generation_sources(args.mode, args.source)
     return {
         "mode": args.mode,
@@ -209,7 +202,7 @@ def pool_settings(args: argparse.Namespace) -> dict:
         "variant": spec["variant"],
         "adapter": IP_ADAPTER if args.mode == "ip-adapter" else None,
         "scheduler": args.scheduler or defaults["scheduler"],
-        "prompts": prompts,
+        "prompts": args.prompt,
         "negative_prompt": args.negative_prompt,
         "steps": args.steps or defaults["steps"],
         "guidance": defaults["guidance"] if args.guidance is None else args.guidance,

@@ -8,7 +8,6 @@ DATA_DIR = Path(os.environ.get("SYNTHDATA_DATA_DIR", REPO / "data"))
 SPLIT_CSV = REPO / "data" / "split.csv"
 POOLS_DIR = REPO / "pools"
 RUNS_DIR = REPO / "runs"
-FINAL_DIR = REPO / "final"
 EVIDENCE_DIR = REPO / "evidence"
 
 CLASSES = [

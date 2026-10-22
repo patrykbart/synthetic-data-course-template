@@ -7,8 +7,8 @@
 
 Every run trains one model per seed and evaluates it on the validation photos.
 runs/<name>/results.json holds the metrics of every seed and the --tag values,
-ready for your own tables and plots. The test photos are used only by
-`synth-final`.
+ready for your own tables and plots. Each seed also saves its model in
+seed-K/model.pt, which `synth-test` evaluates on the test photos after Meeting 4.
 """
 
 import argparse
@@ -171,14 +171,28 @@ def added_examples(method, pool_dir, seed, budget, cache):
     return entries, [record["sample_id"] for record in records]
 
 
-def build_model(name: str) -> nn.Module:
+def build_model(name: str, pretrained: bool = True) -> nn.Module:
     if name == "efficientnet_b0":
-        model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
+        weights = EfficientNet_B0_Weights.DEFAULT if pretrained else None
+        model = efficientnet_b0(weights=weights)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, len(CLASSES))
     else:
-        model = resnet18(weights=ResNet18_Weights.DEFAULT)
+        weights = ResNet18_Weights.DEFAULT if pretrained else None
+        model = resnet18(weights=weights)
         model.fc = nn.Linear(model.fc.in_features, len(CLASSES))
     return model
+
+
+def save_checkpoint(path: Path, name: str, model: nn.Module) -> None:
+    torch.save({"model": name, "state_dict": model.state_dict()}, path)
+
+
+def load_checkpoint(path: Path, device: torch.device) -> nn.Module:
+    """A model saved by synth-train, ready for evaluation."""
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    model = build_model(checkpoint["model"], pretrained=False)
+    model.load_state_dict(checkpoint["state_dict"])
+    return model.to(device)
 
 
 def fit(entries, seed: int, settings: dict, device, workers: int) -> nn.Module:
@@ -231,16 +245,10 @@ def photo_cache(roles: tuple[str, ...]) -> dict[str, Image.Image]:
     return {photo.image: load_small(image_path(photo.image)) for photo in wanted}
 
 
-def run_seed(method, pool_dir, seed, role, settings, device, cache, workers):
-    """Train one model and evaluate it on the photos of `role`."""
-    seed_everything(seed)
-    real = [(cache[photo.image], photo.label, "real") for photo in photos("train")]
-    extra, added = added_examples(method, pool_dir, seed, settings["budget"], cache)
-    started = time.perf_counter()
-    model = fit(real + extra, seed, settings, device, workers)
+def evaluate(model: nn.Module, role: str, device, cache) -> tuple[dict, list]:
+    """Metrics and the prediction for every photo of `role`."""
     evaluated = photos(role)
     probabilities = predict(model, [cache[photo.image] for photo in evaluated], device)
-    seconds = time.perf_counter() - started
     predicted = probabilities.argmax(axis=1)
     metrics = summary([photo.label for photo in evaluated], predicted)
     rows = [
@@ -252,7 +260,19 @@ def run_seed(method, pool_dir, seed, role, settings, device, cache, workers):
         }
         for photo, label, row in zip(evaluated, predicted, probabilities, strict=True)
     ]
-    return metrics, rows, added, seconds
+    return metrics, rows
+
+
+def run_seed(method, pool_dir, seed, settings, device, cache, workers):
+    """Train one model and evaluate it on the validation photos."""
+    seed_everything(seed)
+    real = [(cache[photo.image], photo.label, "real") for photo in photos("train")]
+    extra, added = added_examples(method, pool_dir, seed, settings["budget"], cache)
+    started = time.perf_counter()
+    model = fit(real + extra, seed, settings, device, workers)
+    metrics, rows = evaluate(model, "val", device, cache)
+    seconds = time.perf_counter() - started
+    return model, metrics, rows, added, seconds
 
 
 def environment(device: torch.device) -> dict:
@@ -266,14 +286,20 @@ def environment(device: torch.device) -> dict:
     }
 
 
-def write_seed(folder: Path, metrics, rows, record) -> None:
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
-    (folder / "run.json").write_text(json.dumps(record, indent=2) + "\n")
-    with (folder / "predictions.csv").open("w", newline="") as stream:
+def write_predictions(path: Path, rows: list[dict]) -> None:
+    with path.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_seed(folder: Path, model, metrics, rows, record) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    save_checkpoint(folder / "model.pt", record["model"], model)
+    (folder / "run.json").write_text(json.dumps(record, indent=2) + "\n")
+    write_predictions(folder / "predictions.csv", rows)
+    # Written last: metrics.json marks the seed as done.
+    (folder / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
 
 
 def check_settings(run_dir: Path, settings: dict) -> None:
@@ -315,22 +341,27 @@ def parse_tags(values: list[str]) -> dict:
     return tags
 
 
-def write_results(run_dir: Path, name: str, settings: dict, tags: dict) -> Path:
-    """One JSON file per run with every finished seed and the student's tags."""
-    path = run_dir / "results.json"
-    saved = json.loads(path.read_text()).get("tags", {}) if path.exists() else {}
+def collect_seeds(run_dir: Path, filename: str) -> list[dict]:
+    """The metrics of every finished seed in seed order, without the confusion."""
     files = sorted(
-        run_dir.glob("seed-*/metrics.json"),
+        run_dir.glob(f"seed-*/{filename}"),
         key=lambda file: int(file.parent.name.removeprefix("seed-")),
     )
     keys = ("seed", "egyptian_mau_recall", "macro_f1", "accuracy", "recall")
     seeds = [json.loads(file.read_text()) for file in files]
+    return [{key: metrics[key] for key in keys} for metrics in seeds]
+
+
+def write_results(run_dir: Path, name: str, settings: dict, tags: dict) -> Path:
+    """One JSON file per run with every finished seed and the student's tags."""
+    path = run_dir / "results.json"
+    saved = json.loads(path.read_text()).get("tags", {}) if path.exists() else {}
     results = {
         "name": name,
         **settings,
         "split": "val",
         "tags": {**saved, **tags},
-        "seeds": [{key: metrics[key] for key in keys} for metrics in seeds],
+        "seeds": collect_seeds(run_dir, "metrics.json"),
     }
     path.write_text(json.dumps(results, indent=2) + "\n")
     return path
@@ -406,11 +437,10 @@ def main(argv=None) -> None:
         if (folder / "metrics.json").exists():
             print(f"  seed {seed}: already done")
         else:
-            metrics, rows, added, seconds = run_seed(
+            model, metrics, rows, added, seconds = run_seed(
                 args.method,
                 pool_dir,
                 seed,
-                "val",
                 settings,
                 device,
                 cache,
@@ -426,7 +456,7 @@ def main(argv=None) -> None:
                 "finished": datetime.now(UTC).isoformat(timespec="seconds"),
                 **environment(device),
             }
-            write_seed(folder, metrics, rows, record)
+            write_seed(folder, model, metrics, rows, record)
             print(
                 f"  seed {seed}: Egyptian Mau recall "
                 f"{metrics['egyptian_mau_recall']:.3f}, macro-F1 "

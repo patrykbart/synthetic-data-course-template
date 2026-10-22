@@ -13,3 +13,6 @@ data/*
 # Generated images stay local; manifests, settings, and contact sheets are tracked.
 pools/*/images/
 *.tmp.png
+
+# Trained models stay local; synth-test reads them from runs/<name>/seed-K/.
+runs/*/seed-*/model.pt

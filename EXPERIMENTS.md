@@ -45,7 +45,7 @@ result: say so and say why.
 
 ## Final comparison
 
-- **Conditions frozen before using the test photos, and why each was chosen:**
-- **Command:**
-- **Results:** (your table and plot made from `final/results.json`)
+- **Runs frozen before using the test photos, and why each was chosen:**
+- **Commands:**
+- **Results:** (your table and plot made from the runs' `test-results.json`)
 - **Recommendation:** use, revise, or reject synthetic data for this task.
