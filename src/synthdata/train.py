@@ -2,10 +2,13 @@
 
     uv run synth-train --name m1-real --method real
     uv run synth-train --name m1-oversample --method oversample
-    uv run synth-train --name m2-base --method synthetic --pool m2-base
+    uv run synth-train --name m3-strength-0.5 --method synthetic \
+        --pool m3-strength-0.5 --tag mode=img2img --tag strength=0.5
 
 Every run trains one model per seed and evaluates it on the validation photos.
-The test photos are used only by `synth-final`.
+runs/<name>/results.json holds the metrics of every seed and the --tag values,
+ready for your own tables and plots. The test photos are used only by
+`synth-final`.
 """
 
 import argparse
@@ -292,6 +295,47 @@ def default_workers() -> int:
     return 4 if sys.platform == "linux" else 0
 
 
+def number_or_text(text: str):
+    for cast in (int, float):
+        try:
+            return cast(text)
+        except ValueError:
+            pass
+    return text
+
+
+def parse_tags(values: list[str]) -> dict:
+    """KEY=VALUE pairs; numbers stay numbers so they can go on a plot axis."""
+    tags = {}
+    for value in values:
+        key, separator, text = value.partition("=")
+        if not separator or not key.strip():
+            raise ValueError(f"--tag {value!r}: use KEY=VALUE, e.g. --tag strength=0.5")
+        tags[key.strip()] = number_or_text(text.strip())
+    return tags
+
+
+def write_results(run_dir: Path, name: str, settings: dict, tags: dict) -> Path:
+    """One JSON file per run with every finished seed and the student's tags."""
+    path = run_dir / "results.json"
+    saved = json.loads(path.read_text()).get("tags", {}) if path.exists() else {}
+    files = sorted(
+        run_dir.glob("seed-*/metrics.json"),
+        key=lambda file: int(file.parent.name.removeprefix("seed-")),
+    )
+    keys = ("seed", "egyptian_mau_recall", "macro_f1", "accuracy", "recall")
+    seeds = [json.loads(file.read_text()) for file in files]
+    results = {
+        "name": name,
+        **settings,
+        "split": "val",
+        "tags": {**saved, **tags},
+        "seeds": [{key: metrics[key] for key in keys} for metrics in seeds],
+    }
+    path.write_text(json.dumps(results, indent=2) + "\n")
+    return path
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fine-tune a pretrained CNN and evaluate it on the validation "
@@ -314,11 +358,23 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--device", default="auto", help="auto, cuda, mps, or cpu")
     parser.add_argument("--workers", type=int, default=default_workers())
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="describe the run in results.json, e.g. --tag mode=img2img "
+        "--tag strength=0.5; repeat to add more, rerun to add them later",
+    )
     args = parser.parse_args(argv)
     if args.method == "synthetic" and not args.pool:
         parser.error("--method synthetic needs --pool")
     if args.method != "synthetic" and args.pool:
         parser.error("--pool is used only with --method synthetic")
+    try:
+        args.tags = parse_tags(args.tag)
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -333,11 +389,6 @@ def settings_from(args, pool_dir) -> dict:
     }
 
 
-def describe(values: list[float]) -> str:
-    spread = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
-    return f"{np.mean(values):.3f} ± {spread:.3f}"
-
-
 def main(argv=None) -> None:
     args = parse_args(argv)
     pool_dir = pools.resolve(args.pool) if args.pool else None
@@ -350,11 +401,9 @@ def main(argv=None) -> None:
         f"{args.name}: {args.method}, {args.model}, {len(args.seeds)} seeds, {device}"
     )
 
-    results = []
     for seed in args.seeds:
         folder = run_dir / f"seed-{seed}"
         if (folder / "metrics.json").exists():
-            metrics = json.loads((folder / "metrics.json").read_text())
             print(f"  seed {seed}: already done")
         else:
             metrics, rows, added, seconds = run_seed(
@@ -383,12 +432,9 @@ def main(argv=None) -> None:
                 f"{metrics['egyptian_mau_recall']:.3f}, macro-F1 "
                 f"{metrics['macro_f1']:.3f} ({seconds:.0f} s)"
             )
-        results.append(metrics)
 
-    recalls = [metrics["egyptian_mau_recall"] for metrics in results]
-    f1s = [metrics["macro_f1"] for metrics in results]
-    print(f"Egyptian Mau recall {describe(recalls)} | macro-F1 {describe(f1s)}")
-    print(f"Saved in {run_dir}. Compare runs with: uv run synth-report {run_dir} ...")
+    path = write_results(run_dir, args.name, settings, args.tags)
+    print(f"Results of every seed are in {path}")
 
 
 if __name__ == "__main__":

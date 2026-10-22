@@ -1,8 +1,9 @@
 # Experiment Log
 
-Keep one section per meeting. Paste the tables that `synth-report` writes to
-`evidence/*.md`, link its plots and the pools' contact sheets, and explain what
-you see. A result that shows no effect is still a result: say so and say why.
+Keep one section per meeting. Add the tables and plots you make from
+`runs/*/results.json` (save the plots in `evidence/`), link the pools' contact
+sheets, and explain what you see. A result that shows no effect is still a
+result: say so and say why.
 
 ## Meeting 1 — Real-data baselines
 
@@ -11,7 +12,7 @@ you see. A result that shows no effect is still a result: say so and say why.
 - **How `oversample()` works:**
 - **How `augment()` works, and why these transforms:**
 - **Commands:**
-- **Results:** (table and `evidence/m1-*.png`)
+- **Results:** (your table and plot)
 - **What I see:**
 
 ## Meeting 2 — Text-to-image generation
@@ -46,5 +47,5 @@ you see. A result that shows no effect is still a result: say so and say why.
 
 - **Conditions frozen before using the test photos, and why each was chosen:**
 - **Command:**
-- **Results:** (`final/summary.md`, `final/comparison.png`, `final/differences.png`)
+- **Results:** (your table and plot made from `final/results.json`)
 - **Recommendation:** use, revise, or reject synthetic data for this task.

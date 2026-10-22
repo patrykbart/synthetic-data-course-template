@@ -77,13 +77,54 @@ the notebook, or download them, before the session ends: its disk is erased.
 | --- | --- |
 | `uv run synth-train --name NAME --method METHOD` | trains 5 seeds, saves `runs/NAME/` |
 | `uv run synth-generate --name NAME [options]` | makes a pool of images in `pools/NAME/` |
-| `uv run synth-report RUN ... --out evidence/NAME` | table and plot comparing runs |
 | `uv run synth-final --condition ...` | the single evaluation on the test photos |
 
 `--method` is `real` (no added examples), `oversample`, `augment`, or
 `synthetic` with `--pool NAME`. Each pool has a `manifest.jsonl` line for every
 attempt, a `pool.json` with its settings, and a `contact-sheet.jpg` of its first
 24 images. Run any command with `--help` for all options.
+
+## Results
+
+Every `synth-train` run writes `runs/NAME/results.json` with the validation
+metrics of every seed. The tables and plots are yours to make from these files,
+for example with pandas and matplotlib, which are installed. Save them in
+`evidence/`.
+
+Describe a run with your own variables using `--tag KEY=VALUE`, so that you can
+later group and plot runs by them:
+
+```bash
+uv run synth-train --name m3-strength-0.5 --method synthetic --pool m3-strength-0.5 \
+    --tag mode=img2img --tag strength=0.5
+```
+
+Numbers stay numbers, so `strength` can go on a plot axis. Running the same
+command again with other tags adds them without training again, and you can
+also edit `results.json` by hand. The file looks like this (the values are an
+example):
+
+```json
+{
+  "name": "m3-strength-0.5",
+  "method": "synthetic",
+  "pool": "m3-strength-0.5",
+  "model": "efficientnet_b0",
+  "epochs": 8,
+  "batch_size": 64,
+  "budget": 55,
+  "split": "val",
+  "tags": {"mode": "img2img", "strength": 0.5},
+  "seeds": [
+    {"seed": 0, "egyptian_mau_recall": 0.75, "macro_f1": 0.9, "accuracy": 0.9,
+     "recall": {"Abyssinian": 0.95, "Bengal": 0.85}}
+  ]
+}
+```
+
+`recall` lists all eight breeds. Each `runs/NAME/seed-K/` folder also has
+`metrics.json` with the confusion matrix, `predictions.csv` with the prediction
+for every validation photo, and `run.json` with the exact training data.
 
 ## Meeting 1 — Real-Data Baselines
 
@@ -93,8 +134,9 @@ Write `oversample()` and `augment()` in `src/synthdata/balance.py`, then:
 uv run synth-train --name m1-real --method real
 uv run synth-train --name m1-oversample --method oversample
 uv run synth-train --name m1-augment --method augment
-uv run synth-report runs/m1-real runs/m1-oversample runs/m1-augment --out evidence/m1-baselines
 ```
+
+Then compare the three runs, seed by seed, in your own table and plot.
 
 ## Meeting 2 — Text-to-Image Generation
 
@@ -103,8 +145,14 @@ uv run synth-generate --name m2-base
 uv run synth-train --name m2-base --method synthetic --pool m2-base
 ```
 
-Then make new pools that change one setting each, for example
-`uv run synth-generate --name m2-guidance-3 --guidance 3`.
+Then make new pools that change one setting each, and tag each run with the
+setting you changed:
+
+```bash
+uv run synth-generate --name m2-guidance-3 --guidance 3
+uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 \
+    --tag guidance=3
+```
 
 | Option | Meaning | Default |
 | --- | --- | --- |
@@ -124,6 +172,8 @@ Both modes start from the 15 Egyptian Mau training photos, used in turn.
 ```bash
 uv run synth-generate --name m3-strength-0.5 --mode img2img --strength 0.5
 uv run synth-generate --name m3-ip-0.5 --mode ip-adapter --ip-adapter-scale 0.5
+uv run synth-train --name m3-ip-0.5 --method synthetic --pool m3-ip-0.5 \
+    --tag mode=ip-adapter --tag scale=0.5
 ```
 
 - `--strength` (img2img): how much of the photo is replaced by noise. Near 0
@@ -160,12 +210,15 @@ uv run synth-final --condition real --condition oversample --condition augment \
 ```
 
 It trains every condition with the same seeds, evaluates them once on the test
-photos, and writes `final/summary.md` with differences from oversampling and
-augmentation and their 95% intervals.
+photos, and writes `final/results.json`: the test metrics of every seed, and the
+difference of every condition from oversampling and augmentation with a 95%
+interval that accounts for both the seeds and the choice of test photos. Make
+your final table and plot from it.
 
 ## What to Commit
 
-Commit `EXPERIMENTS.md`, `evidence/`, `runs/`, `final/`, and each pool's
+Commit `EXPERIMENTS.md`, your tables and plots in `evidence/`, `runs/`,
+`final/`, and each pool's
 `manifest.jsonl`, `pool.json`, and `contact-sheet.jpg`. Generated images,
 downloaded data, and model weights stay local; `.gitignore` already excludes
 them, and the manifests record how to recreate every image.

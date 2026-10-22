@@ -9,7 +9,7 @@ from PIL import Image
 from synthdata.inputs import keep_cat, outpaint_inputs, paste_back
 from synthdata.metrics import macro_f1, summary, target_recall
 from synthdata.pools import draw, read_manifest
-from synthdata.report import table
+from synthdata.train import parse_tags, write_results
 
 RED = (200, 10, 10)
 BLUE = (0, 0, 255)
@@ -77,13 +77,30 @@ def test_metrics_on_a_small_example():
     assert summary(labels, predictions)["accuracy"] == pytest.approx(4 / 6)
 
 
-def test_report_table_averages_seeds():
-    runs = {
-        "a": [
-            {"egyptian_mau_recall": 0.5, "macro_f1": 0.8, "accuracy": 0.8},
-            {"egyptian_mau_recall": 0.7, "macro_f1": 0.9, "accuracy": 0.9},
-        ]
-    }
-    row = table(runs).iloc[0]
-    assert row["egyptian_mau_recall_mean"] == pytest.approx(0.6)
-    assert row["seeds"] == 2
+def test_tags_keep_numbers_as_numbers():
+    tags = parse_tags(["mode=ip-adapter", "scale=0.5", "steps=30"])
+    assert tags == {"mode": "ip-adapter", "scale": 0.5, "steps": 30}
+    with pytest.raises(ValueError):
+        parse_tags(["scale"])
+
+
+def test_results_keep_every_seed_and_earlier_tags(tmp_path):
+    for seed, recall in [(1, 0.7), (0, 0.5)]:
+        folder = tmp_path / f"seed-{seed}"
+        folder.mkdir()
+        metrics = {
+            "seed": seed,
+            "egyptian_mau_recall": recall,
+            "macro_f1": 0.9,
+            "accuracy": 0.9,
+            "recall": {},
+            "confusion": [],
+        }
+        (folder / "metrics.json").write_text(json.dumps(metrics))
+    settings = {"method": "synthetic", "pool": "m3-ip-0.5"}
+    write_results(tmp_path, "m3-ip-0.5", settings, {"mode": "ip-adapter"})
+    write_results(tmp_path, "m3-ip-0.5", settings, {"scale": 0.5})
+    results = json.loads((tmp_path / "results.json").read_text())
+    assert results["tags"] == {"mode": "ip-adapter", "scale": 0.5}
+    assert [entry["seed"] for entry in results["seeds"]] == [0, 1]
+    assert "confusion" not in results["seeds"][0]

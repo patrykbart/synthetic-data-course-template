@@ -5,14 +5,16 @@
         --condition "img2img=m3-strength-0.5"
 
 Every condition is trained on the same seeds and evaluated on the 240 test
-photos. Results go to final/: summary.md, results.csv, comparison.png, and
-differences.png. The test photos are used once; a second comparison stops
-unless --force is given.
+photos. final/results.json holds the test metrics of every seed and the
+difference of every condition from oversampling and augmentation with a 95%
+interval, ready for your own tables and plots. The test photos are used once;
+a second comparison stops unless --force is given.
 """
 
 import argparse
 import csv
 import json
+import shutil
 from datetime import UTC, datetime
 
 import numpy as np
@@ -21,7 +23,6 @@ from synthdata import pools
 from synthdata.config import BUDGET, CLASSES, FINAL_DIR, SEEDS
 from synthdata.data import photos
 from synthdata.metrics import macro_f1, target_recall
-from synthdata.report import METRICS, plot, spread
 from synthdata.train import (
     MODELS,
     default_workers,
@@ -34,7 +35,9 @@ from synthdata.train import (
 
 BUILT_IN = ("real", "oversample", "augment")
 LOCK = FINAL_DIR / "TEST_USED.json"
+RESULTS = FINAL_DIR / "results.json"
 SCORES = {"egyptian_mau_recall": target_recall, "macro_f1": macro_f1}
+KEYS = ("seed", "egyptian_mau_recall", "macro_f1", "accuracy", "recall")
 
 
 def parse_condition(text: str) -> tuple[str, str, str | None]:
@@ -81,84 +84,10 @@ def read_predictions(folder) -> list[int]:
         return [CLASSES.index(row["predicted"]) for row in csv.DictReader(stream)]
 
 
-def plot_differences(rows: list[dict], path) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    conditions = list(dict.fromkeys(row["condition"] for row in rows))
-    references = list(dict.fromkeys(row["reference"] for row in rows))
-    colours = ["#b45309", "#15803d", "#1f4e79", "#7c3aed"]
-    figure, axes = plt.subplots(
-        1, 2, figsize=(10, 0.5 * len(conditions) + 1.9), layout="constrained"
-    )
-    for axis, (key, title) in zip(axes, METRICS.items(), strict=True):
-        for number, reference in enumerate(references):
-            shift = (number - (len(references) - 1) / 2) * 0.22
-            colour = colours[number % len(colours)]
-            for row in rows:
-                if row["reference"] != reference:
-                    continue
-                position = conditions.index(row["condition"]) + shift
-                mean, low, high = row[key]
-                axis.plot([low, high], [position, position], color=colour, lw=2)
-                axis.plot(mean, position, "D", color=colour, ms=5)
-            axis.plot([], [], "-D", color=colour, label=f"compared with {reference}")
-        axis.axvline(0, color="#888888", lw=1, ls="--")
-        axis.set_yticks(range(len(conditions)))
-        axis.set_yticklabels(conditions if key == "egyptian_mau_recall" else [])
-        axis.set_ylim(len(conditions) - 0.5, -0.5)
-        axis.set_title(f"Difference in {title}")
-        axis.spines[["top", "right"]].set_visible(False)
-    handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(
-        handles, labels, loc="outside lower center", ncol=len(labels), frameon=False
-    )
-    figure.suptitle("Differences on the test photos with 95% intervals")
-    figure.savefig(path, dpi=150)
-    plt.close(figure)
-
-
-def summary_markdown(results, differences, settings, started) -> str:
-    lines = [
-        "# Final comparison on the test photos",
-        "",
-        f"Test photos used on {started}. Seeds: {settings['seeds']}. "
-        f"Model: {settings['model']}, {settings['epochs']} epochs.",
-        "",
-        "| Condition | Egyptian Mau recall | Macro-F1 |",
-        "| --- | ---: | ---: |",
-    ]
-    for label, metrics in results.items():
-        cells = [
-            f"{np.mean([m[key] for m in metrics]):.3f} ± "
-            f"{spread([m[key] for m in metrics]):.3f}"
-            for key in METRICS
-        ]
-        lines.append(f"| {label} | {cells[0]} | {cells[1]} |")
-    lines += [
-        "",
-        "## Differences with 95% intervals over seeds and test photos",
-        "",
-        "| Condition | Compared with | Egyptian Mau recall | Macro-F1 |",
-        "| --- | --- | ---: | ---: |",
-    ]
-    for row in differences:
-        cells = [
-            f"{row[key][0]:+.3f} [{row[key][1]:+.3f}, {row[key][2]:+.3f}]"
-            for key in METRICS
-        ]
-        lines.append(
-            f"| {row['condition']} | {row['reference']} | {cells[0]} | {cells[1]} |"
-        )
-    return "\n".join(lines) + "\n"
-
-
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         description="Train the frozen conditions and evaluate them once on the "
-        "test photos."
+        "test photos. Results go to final/results.json."
     )
     parser.add_argument("--condition", action="append", required=True)
     parser.add_argument(
@@ -194,19 +123,23 @@ def main(argv=None) -> None:
     }
 
     FINAL_DIR.mkdir(exist_ok=True)
+    started = None
     if LOCK.exists():
         lock = json.loads(LOCK.read_text())
         same = {key: lock.get(key) for key in settings} == settings
         if lock.get("finished") and not args.force:
             raise SystemExit(
                 f"The test photos were already used on {lock['started']} "
-                "(see final/summary.md). Ask the instructor before using --force."
+                "(see final/results.json). Ask the instructor before using --force."
             )
         if not lock.get("finished") and not same and not args.force:
             raise SystemExit("an unfinished comparison with other settings exists")
-        started = lock["started"] if same and not args.force else None
-    else:
-        started = None
+        if same and not args.force:
+            started = lock["started"]
+    if args.force:
+        # A new comparison starts from scratch instead of reusing old seeds.
+        for label in labels:
+            shutil.rmtree(FINAL_DIR / label, ignore_errors=True)
     started = started or datetime.now(UTC).isoformat(timespec="seconds")
     LOCK.write_text(json.dumps({**settings, "started": started}, indent=2) + "\n")
 
@@ -221,7 +154,12 @@ def main(argv=None) -> None:
     results, predictions = {}, {}
     for label, method, pool in conditions:
         pool_dir = pools.resolve(pool) if pool else None
-        results[label], predictions[label] = [], []
+        results[label] = {
+            "method": method,
+            "pool": pool_dir.name if pool_dir else None,
+            "seeds": [],
+        }
+        predictions[label] = []
         for seed in args.seeds:
             folder = FINAL_DIR / label / f"seed-{seed}"
             if not (folder / "metrics.json").exists():
@@ -252,7 +190,8 @@ def main(argv=None) -> None:
                     f"{metrics['egyptian_mau_recall']:.3f}, macro-F1 "
                     f"{metrics['macro_f1']:.3f}"
                 )
-            results[label].append(json.loads((folder / "metrics.json").read_text()))
+            metrics = json.loads((folder / "metrics.json").read_text())
+            results[label]["seeds"].append({key: metrics[key] for key in KEYS})
             predictions[label].append(read_predictions(folder))
 
     truth = [photo.label for photo in photos("test")]
@@ -260,34 +199,42 @@ def main(argv=None) -> None:
     differences = []
     for label in labels:
         # A reference is compared only with the references listed before it.
-        compared = (
-            references[: references.index(label)] if label in references else references
-        )
+        if label in references:
+            compared = references[: references.index(label)]
+        else:
+            compared = references
         for reference in compared:
-            row = {"condition": label, "reference": reference}
             for key, score in SCORES.items():
-                row[key] = bootstrap(truth, arrays[label], arrays[reference], score)
-            differences.append(row)
-
-    with (FINAL_DIR / "results.csv").open("w", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["condition", "seed", *METRICS, "accuracy"])
-        for label, metrics in results.items():
-            for item in metrics:
-                writer.writerow(
-                    [label, item["seed"], *(item[k] for k in METRICS), item["accuracy"]]
+                difference, low, high = bootstrap(
+                    truth, arrays[label], arrays[reference], score
                 )
-    text = summary_markdown(results, differences, settings, started)
-    (FINAL_DIR / "summary.md").write_text(text)
-    plot(results, FINAL_DIR / "comparison.png", title="Test photos")
-    if differences:
-        plot_differences(differences, FINAL_DIR / "differences.png")
+                differences.append(
+                    {
+                        "condition": label,
+                        "compared_with": reference,
+                        "metric": key,
+                        "difference": round(difference, 4),
+                        "interval_95": [round(low, 4), round(high, 4)],
+                    }
+                )
+
     finished = datetime.now(UTC).isoformat(timespec="seconds")
+    output = {
+        **settings,
+        "split": "test",
+        "test_photos_used": started,
+        "conditions": results,
+        "differences": differences,
+    }
+    RESULTS.write_text(json.dumps(output, indent=2) + "\n")
     LOCK.write_text(
         json.dumps({**settings, "started": started, "finished": finished}, indent=2)
         + "\n"
     )
-    print(text)
+    print(
+        f"Test results of every seed and every difference with its 95% interval "
+        f"are in {RESULTS}"
+    )
 
 
 if __name__ == "__main__":

@@ -21,7 +21,6 @@ dependencies = [
 synth-data = "synthdata.data:main"
 synth-train = "synthdata.train:main"
 synth-generate = "synthdata.generate:main"
-synth-report = "synthdata.report:main"
 synth-final = "synthdata.final:main"
 
 [dependency-groups]
