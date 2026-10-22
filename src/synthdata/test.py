@@ -1,13 +1,14 @@
-"""Evaluate the saved models of a run on the test photos (after Meeting 4).
+"""Evaluate the saved models of a run on the test photos.
 
-    uv run synth-test --run m2-base
-    uv run synth-test --run m2-base --seeds 0
+    uv run synth-test --run m1-real
+    uv run synth-test --run m1-real --seeds 0
 
 synth-train saves the model of every seed in runs/<name>/seed-K/model.pt. This
 command evaluates those models on the 240 test photos. Every seed folder gets
 test-metrics.json and test-predictions.csv, and runs/<name>/test-results.json
 holds the test metrics of every seed in the same format as results.json, ready
-for your own tables and plots. Test only the runs you froze, and only once.
+for your own tables and plots. Test a run only after choosing it on the
+validation results.
 """
 
 import argparse

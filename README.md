@@ -70,9 +70,10 @@ committed.
   epochs. Each experiment trains 5 models with seeds 0–4.
 - **Metrics:** Egyptian Mau recall (the share of Egyptian Mau photos recognised)
   and macro-F1 over all eight breeds (to catch harm to the other breeds).
-- **Validation and test:** Meetings 1–4 evaluate on the validation photos. The
-  test photos are used once, after Meeting 4, by `synth-test` on the runs you
-  chose.
+- **Validation and test:** every run is evaluated on the validation photos,
+  which you use to compare settings and choose. At the end of each meeting,
+  `synth-test` evaluates the runs you chose on the test photos, and these test
+  results summarise the meeting.
 
 ## Commands
 
@@ -129,7 +130,7 @@ example):
 `metrics.json` with the confusion matrix, `predictions.csv` with the prediction
 for every validation photo, `run.json` with the exact training data, and
 `model.pt`, the trained model (about 16 MB, not committed) that `synth-test`
-evaluates after Meeting 4.
+evaluates on the test photos.
 
 ## Meeting 1 — Real-Data Baselines
 
@@ -141,7 +142,23 @@ uv run synth-train --name m1-oversample --method oversample
 uv run synth-train --name m1-augment --method augment
 ```
 
-Then compare the three runs, seed by seed, in your own table and plot.
+Then compare the three runs, seed by seed, in your own table and plot, and
+write down what the validation results show. Only then test the three
+baselines:
+
+```bash
+uv run synth-test --run m1-real
+uv run synth-test --run m1-oversample
+uv run synth-test --run m1-augment
+```
+
+`synth-test` evaluates the saved model of every seed on the 240 test photos and
+writes `runs/NAME/test-results.json` in the same format as `results.json`, plus
+`test-metrics.json` and `test-predictions.csv` in every seed folder. Add
+`--seeds 0` to test only the model of seed 0. Every meeting ends the same way:
+choose on the validation results, write the choice down, then test the chosen
+runs and report their test values. The baselines' test results are the
+reference for every later meeting.
 
 ## Meeting 2 — Text-to-Image Generation
 
@@ -173,6 +190,9 @@ uv run synth-train --name m2-guidance-3 --method synthetic --pool m2-guidance-3 
 | `--seed` | seed of the first image; image *i* uses seed + *i* | 1000 |
 | `--count` | images in the pool | 110 |
 
+Choose the pool you take forward on the validation results, write the choice
+down, and test its run with `uv run synth-test --run NAME`.
+
 ## Meeting 3 — Generation from Training Photos
 
 You do not pass a photo: both modes start from the 15 Egyptian Mau training
@@ -197,6 +217,9 @@ uv run synth-train --name m3-ip-0.5 --method synthetic --pool m3-ip-0.5 \
 - `--ip-adapter-scale` (ip-adapter): how strongly the photo steers a new
   image. The pose and background may change; the cat should look similar.
 
+Choose the best run of each mode on the validation results, write the choice
+down, and test both runs with `synth-test`.
+
 ## Meeting 4 — Editing Training Photos
 
 ```bash
@@ -216,24 +239,15 @@ uv run synth-generate --name m4-outpaint-1.5 --mode outpaint --outpaint-scale 1.
   if the camera moved back. `--outpaint-scale` sets how far: 1.25 to 2.
 
 As in Meeting 3, both modes start from the training photos themselves and print
-which ones; `--source` chooses some of them.
+which ones; `--source` chooses some of them. As in every meeting, choose the
+best run of each mode on the validation results, write the choice down, and
+test both runs.
 
-## After Meeting 4 — Final Comparison
+## Meeting 5 — Final Comparison
 
-Choose the best run of each method using the validation results and freeze the
-choice in `EXPERIMENTS.md`. Only then evaluate the saved models of those runs on
-the test photos, one command per run:
-
-```bash
-uv run synth-test --run m1-oversample
-uv run synth-test --run m2-base
-```
-
-`synth-test` evaluates the model of every seed on the 240 test photos and writes
-`runs/NAME/test-results.json` in the same format as `results.json`, plus
-`test-metrics.json` and `test-predictions.csv` in every seed folder. Add
-`--seeds 0` to test only the model of seed 0. The final table and plot, and the
-differences between methods, are yours to make.
+No new tests are needed. Collect the test results of the runs you chose in
+Meetings 1–4 into your final table and plot, compute the differences between
+methods yourself, and compare the ranking with the validation results.
 
 ## What to Commit
 
@@ -249,8 +263,8 @@ recreate every image.
 - Do not delete pools or images you do not like: describe them.
 - Generation uses only the 15 Egyptian Mau training photos; the tools enforce
   this.
-- Test only the runs you froze, and only once: do not change your choices after
-  seeing the test results.
+- Choose on the validation results and write the choice down before testing.
+  Test only the chosen runs, and do not revise a choice after its test result.
 
 ## Coding Agent
 

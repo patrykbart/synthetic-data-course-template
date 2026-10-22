@@ -8,7 +8,7 @@
 Every run trains one model per seed and evaluates it on the validation photos.
 runs/<name>/results.json holds the metrics of every seed and the --tag values,
 ready for your own tables and plots. Each seed also saves its model in
-seed-K/model.pt, which `synth-test` evaluates on the test photos after Meeting 4.
+seed-K/model.pt, which `synth-test` evaluates on the test photos.
 """
 
 import argparse
