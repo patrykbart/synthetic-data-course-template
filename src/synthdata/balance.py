@@ -1,7 +1,7 @@
 """Meeting 1: the two classical ways to add Egyptian Mau training examples.
 
-Both functions are yours to write. `uv run pytest` checks them, and
-`uv run synth-train --method oversample` or `--method augment` uses them.
+Both functions are yours to write; `uv run synth-train --method oversample` or
+`--method augment` uses them.
 """
 
 import random

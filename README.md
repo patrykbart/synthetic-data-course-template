@@ -23,8 +23,7 @@ uv run pytest
 ```
 
 `synth-data` downloads Oxford-IIIT Pet (about 800 MB) into `data/` and checks
-the course split. The four tests in `tests/test_balance.py` fail until you
-finish Meeting 1; the other tests should pass.
+the course split, and `pytest` checks the starter code.
 
 ### Hardware
 
@@ -91,7 +90,6 @@ attempt, a `pool.json` with its settings, and a `contact-sheet.jpg` of its first
 Write `oversample()` and `augment()` in `src/synthdata/balance.py`, then:
 
 ```bash
-uv run pytest
 uv run synth-train --name m1-real --method real
 uv run synth-train --name m1-oversample --method oversample
 uv run synth-train --name m1-augment --method augment
